@@ -7,7 +7,6 @@ import (
 	"math/big"
 	"math/rand"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -17,7 +16,6 @@ const publicPath = "./public.txt"
 
 var (
 	blockSize = 2
-	bigOne    = big.NewInt(1)
 )
 
 type pubKey struct {
@@ -31,49 +29,49 @@ type priKey struct {
 }
 
 func choosePQ() (*big.Int, *big.Int) {
+	// lowerBound as 10^75
 	lowerBound := big.NewInt(10)
 	lowerBound.Exp(lowerBound, big.NewInt(75), nil)
+	// upperBound as 10^100
 	upperBound := big.NewInt(10)
 	upperBound.Exp(upperBound, big.NewInt(100), nil)
 	p := big.NewInt(0)
 	q := big.NewInt(0)
+	// make 10^75 < p, q < 10^100 and p, q is prime
 	for true {
 		rand.Seed(time.Now().UnixNano())
 		random := rand.New(rand.NewSource(time.Now().UnixNano()))
 		p.Rand(random, upperBound)
-		if p.Cmp(lowerBound) > 0  {
-			if p.ProbablyPrime(10)  {
-				break
-			}
+		if p.Cmp(lowerBound) > 0 && p.ProbablyPrime(10) {
+			break
 		}
 	}
 	for true {
 		rand.Seed(time.Now().UnixNano())
 		random := rand.New(rand.NewSource(time.Now().UnixNano()))
 		q.Rand(random, upperBound)
-		if q.Cmp(lowerBound) > 0 {
-			if q.ProbablyPrime(10) {
-				break
-			}
+		if q.Cmp(lowerBound) > 0 && q.ProbablyPrime(10) {
+			break
 		}
 	}
 	return p, q
 }
 
 func chooseE(totient *big.Int) *big.Int {
-	var res *big.Int
+	var e *big.Int
 	tmp := big.NewInt(0)
 	for true {
 		r := big.NewInt(0)
-		r.Rand(rand.New(rand.NewSource(time.Now().UnixNano())), totient)
+		random := rand.New(rand.NewSource(time.Now().UnixNano()))
+		r.Rand(random, totient)
 		r.Add(r, big.NewInt(2))
 		tmp.GCD(nil, nil, r, totient)
-		if tmp.Cmp(bigOne) == 0 {
-			res = r
+		if tmp.Cmp(big.NewInt(1)) == 0 {
+			e = r
 			break
 		}
 	}
-	return res
+	return e
 }
 
 func calD(e *big.Int, totient *big.Int) *big.Int {
@@ -82,7 +80,7 @@ func calD(e *big.Int, totient *big.Int) *big.Int {
 	return d
 }
 
-func getKey() (pubKey, priKey) {
+func getKey() (*pubKey, *priKey) {
 	p, q := choosePQ()
 	n := big.NewInt(0)
 	n.Mul(p, q)
@@ -92,23 +90,30 @@ func getKey() (pubKey, priKey) {
 	e := chooseE(totient)
 	d := calD(e, totient)
 
-	return pubKey{n, e}, priKey{n, d}
+	return &pubKey{n, e}, &priKey{n, d}
 }
 
-func (public pubKey) encrypt(message []rune) []string {
+func (public *pubKey) encrypt(message []rune) []string {
 	var (
+		// store result as string
 		res []string
+		// store block content as int
 		tmp []int
 	)
+	// two ASCII characters as a input block
 	b := int(message[0])
 	for i := 1; i < len(message); i++ {
 		if i%blockSize == 0 {
 			tmp = append(tmp, b)
 			b = 0
 		}
+		// multiply 1000 due to ASCII is 3 bit(0~127)
 		b = b*1000 + int(message[i])
 	}
 	tmp = append(tmp, b)
+	// now b is original block content like this: 101101
+
+	// encrypt for each block
 	for i := 0; i < len(tmp); i++ {
 		bigTmpI := big.NewInt(int64(tmp[i]))
 		bigTmpI.Exp(bigTmpI, public.e, public.n)
@@ -117,10 +122,11 @@ func (public pubKey) encrypt(message []rune) []string {
 	return res
 }
 
-func (private priKey) decrypt(cipher []string) []rune {
+func (private *priKey) decrypt(cipher []string) []rune {
 	var (
-		tmp    []*big.Int
-		tmpRes []string
+		// store original block content as int
+		tmp []int
+		// store results as character
 		res []rune
 	)
 	for i := 0; i < len(cipher); i++ {
@@ -129,29 +135,23 @@ func (private priKey) decrypt(cipher []string) []rune {
 		if !ok {
 			log.Fatalln("string to big.Int failed")
 		}
+		// decrypt for each block
 		bigB.Exp(bigB, private.d, private.n)
-		tmp = append(tmp, bigB)
+		// now bigB is original block content like this: 101101
+		tmp = append(tmp, int(bigB.Int64()))
 
-		var aRes string
+		var aRes rune
 		for j := 1; j < blockSize; j++ {
-			tmpI := big.NewInt(tmp[i].Int64())
-			aRes = tmpI.Mod(tmp[i], big.NewInt(1000)).String()
-			tmp[i].Div(tmp[i], big.NewInt(1000))
-			tmpRes = append(tmpRes, tmp[i].String())
-			tmpRes = append(tmpRes, aRes)
+			aRes = rune(tmp[i] % 1000)
+			tmp[i] /= 1000
+			res = append(res, rune(tmp[i]))
+			res = append(res, aRes)
 		}
-	}
-	for _, v := range tmpRes {
-		intV, err := strconv.Atoi(v)
-		if err != nil {
-			log.Fatalln(err)
-		}
-		res = append(res, rune(intV))
 	}
 	return res
 }
 
-func writeKey(public pubKey, private priKey) {
+func writeKey(public *pubKey, private *priKey) {
 	f0, err := os.Create(publicPath)
 	if err != nil {
 		log.Fatalln(err)
@@ -174,7 +174,7 @@ func writeKey(public pubKey, private priKey) {
 	fmt.Println("Public key and private key have been written successfully!")
 }
 
-func readKey() (pubKey, priKey) {
+func readKey() (*pubKey, *priKey) {
 	var public pubKey
 	var private priKey
 	f0, err := os.Open(publicPath)
@@ -222,12 +222,12 @@ func readKey() (pubKey, priKey) {
 		}
 		private.n, private.d = tmpN, tmpD
 	}
-	return public, private
+	return &public, &private
 }
 
 func main() {
-	var public pubKey
-	var private priKey
+	var public *pubKey
+	var private *priKey
 	fmt.Println("Whether generate new keys or not? (y/n)")
 	var first string
 	fmt.Scanf("%s", &first)
