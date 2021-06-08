@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"log"
 	"math/big"
@@ -225,6 +226,38 @@ func readKey() (*pubKey, *priKey) {
 	return &public, &private
 }
 
+func writeFile(filename string, strArr []string) error {
+	var res error
+	f, err := os.Create(filename)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	w := bufio.NewWriter(f)
+	for _, str := range strArr {
+		fmt.Fprint(w, str)
+		fmt.Fprint(w, " ")
+	}
+	res = w.Flush()
+	return res
+}
+
+func readFile(filename string) (strArr []string, res error) {
+	f, err := os.Open(filename)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	defer f.Close()
+
+	scn := bufio.NewScanner(f)
+	for scn.Scan() {
+		value := scn.Text()
+		value = strings.TrimSpace(value)
+		strArr = strings.Split(value, " ")
+		return
+	}
+	return nil, errors.New("read cipher from file \"" + filename + "\"failed")
+}
+
 func main() {
 	var public *pubKey
 	var private *priKey
@@ -251,15 +284,52 @@ func main() {
 		cipher := public.encrypt([]rune(message))
 		fmt.Print("cipher is ")
 		fmt.Println(cipher)
-	} else if second == "d" {
-		fmt.Println("Please input cipher")
-		var cipher string
-		scanner := bufio.NewScanner(os.Stdin)
+		var third string
+		fmt.Println("Do you want to write cipher to a file? (y/n)")
 		if scanner.Scan() {
-			cipher = scanner.Text()
+			third = scanner.Text()
 		}
-		res := strings.Split(cipher, " ")
-		oriM := private.decrypt(res)
-		fmt.Println("message is " + string(oriM))
+		if third == "y" {
+			fmt.Println("Please input filename: ")
+			var fourth string
+			if scanner.Scan() {
+				fourth = scanner.Text()
+			}
+			if err := writeFile(fourth, cipher); err == nil {
+				fmt.Println("cipher has been stored successfully!")
+			} else {
+				fmt.Println("store failed!")
+			}
+		}
+	} else if second == "d" {
+		scanner := bufio.NewScanner(os.Stdin)
+		var third string
+		fmt.Println("Please choose read from file or input via stdin? (f/s)")
+		if scanner.Scan() {
+			third = scanner.Text()
+			if third == "s" {
+				fmt.Println("Please input cipher")
+				var cipher string
+				if scanner.Scan() {
+					cipher = scanner.Text()
+				}
+				res := strings.Split(cipher, " ")
+				oriM := private.decrypt(res)
+				fmt.Println("message is " + string(oriM))
+			} else if third == "f" {
+				var fourth string
+				fmt.Println("Please input filename")
+				if scanner.Scan() {
+					fourth = scanner.Text()
+				}
+				cipher, err := readFile(fourth)
+				if err != nil {
+					log.Fatal(err)
+				} else {
+					oriM := private.decrypt(cipher)
+					fmt.Println("message is " + string(oriM))
+				}
+			}
+		}
 	}
 }
