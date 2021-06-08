@@ -250,8 +250,7 @@ func readFile(filename string) (strArr []string, res error) {
 
 	scn := bufio.NewScanner(f)
 	for scn.Scan() {
-		value := scn.Text()
-		value = strings.TrimSpace(value)
+		value := strings.TrimSpace(scn.Text())
 		strArr = strings.Split(value, " ")
 		return
 	}
