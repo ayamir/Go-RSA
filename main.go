@@ -311,7 +311,7 @@ func main() {
 				fmt.Println("Please input cipher")
 				var cipher string
 				if scanner.Scan() {
-					cipher = scanner.Text()
+					cipher = strings.TrimSpace(scanner.Text())
 				}
 				res := strings.Split(cipher, " ")
 				oriM := private.decrypt(res)
